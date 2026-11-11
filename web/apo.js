@@ -19,7 +19,16 @@ const nro = n => String(n).padStart(8, '0');
 const PLURAL = { caja: 'cajas', 'porción': 'porciones', unidad: 'unidades' };
 const unidades = (n, u) => `${n} ${n === 1 ? u : (PLURAL[u] || u)}`;
 const ESTADOS = { recibido: 'Recibido', en_preparacion: 'En preparación', enviado: 'Enviado', entregado: 'Entregado', cancelado: 'Cancelado' };
-const TIPOS = { restaurante: 'Restaurante · porciones', mayorista: 'Mayorista · cajas' };
+const TIPOS = { restaurante: 'Restaurante · porciones', mayorista: 'Mayorista · cajas', prepizza: 'Pre pizzas' };
+const TIPO_CORTO = { restaurante: 'Restaurante', mayorista: 'Mayorista', prepizza: 'Pre pizzas' };
+const CATALOGO = { restaurante: 'Porciones para restaurantes', mayorista: 'Cajas para mayoristas', prepizza: 'Pre pizzas congeladas' };
+const DOMINIO = '@clientes.apolonia.invalid';   // cuentas con usuario (sin email real)
+const aEmail = v => { v = v.trim().toLowerCase(); return v.includes('@') ? v : v + DOMINIO; };
+const usuarioDe = e => String(e || '').endsWith(DOMINIO) ? e.slice(0, -DOMINIO.length) : e;
+const SEG_TIPOS = (sel = 'restaurante') => `<div class="seg">
+  <label><input type="radio" name="tc" value="restaurante" ${sel === 'restaurante' ? 'checked' : ''}><b>Restaurante</b><span>Porciones congeladas</span></label>
+  <label><input type="radio" name="tc" value="mayorista" ${sel === 'mayorista' ? 'checked' : ''}><b>Mayorista</b><span>Cajas congeladas</span></label>
+  <label><input type="radio" name="tc" value="prepizza" ${sel === 'prepizza' ? 'checked' : ''}><b>Pre pizzas</b><span>Pre pizzas congeladas</span></label></div>`;
 const errMsg = e => e?.message || String(e);
 
 const ICON = {
@@ -113,10 +122,7 @@ function vAcceso(modo = 'entrar', aviso = '') {
       <div id="err"></div>
       ${alta ? `
         <div class="field"><label>¿Qué tipo de cliente sos?</label>
-          <div class="seg">
-            <label><input type="radio" name="tc" value="restaurante" checked><b>Restaurante</b><span>Compro porciones congeladas</span></label>
-            <label><input type="radio" name="tc" value="mayorista"><b>Mayorista</b><span>Compro cajas congeladas</span></label>
-          </div></div>
+${SEG_TIPOS()}</div>
         <div class="field"><label for="rs">Nombre del negocio / razón social</label><input class="in" id="rs" required autocomplete="organization"></div>
         <div class="grid2">
           <div class="field"><label for="ct">Persona de contacto</label><input class="in" id="ct" autocomplete="name"></div>
@@ -126,7 +132,7 @@ function vAcceso(modo = 'entrar', aviso = '') {
           <div class="field"><label for="cuit">CUIT</label><input class="in" id="cuit" inputmode="numeric"></div>
           <div class="field"><label for="dir">Dirección de entrega</label><input class="in" id="dir" autocomplete="street-address"></div>
         </div>` : ''}
-      <div class="field"><label for="em">Email</label><input class="in" id="em" type="email" required autocomplete="email"></div>
+      <div class="field"><label for="em">${alta ? 'Email' : 'Usuario o email'}</label><input class="in" id="em" type="${alta ? 'email' : 'text'}" required autocomplete="username" autocapitalize="none" spellcheck="false"></div>
       <div class="field"><label for="pw">Contraseña</label><input class="in" id="pw" type="password" required minlength="6" autocomplete="${alta ? 'new-password' : 'current-password'}">
         ${alta ? '<span class="hint">Mínimo 6 caracteres.</span>' : ''}</div>
       <button class="btn block" id="go">${alta ? 'Crear cuenta' : 'Entrar'}</button>
@@ -138,13 +144,13 @@ function vAcceso(modo = 'entrar', aviso = '') {
   $('#f').onsubmit = async e => {
     e.preventDefault();
     const err = t => { $('#err').innerHTML = `<div class="msg bad">${esc(t)}</div>`; };
-    const email = $('#em').value.trim(), password = $('#pw').value;
+    const email = alta ? $('#em').value.trim() : aEmail($('#em').value), password = $('#pw').value;
     if (!email || !password) return err('Completá email y contraseña.');
     $('#go').disabled = true;
     try {
       if (!alta) {
         const { error } = await sb.auth.signInWithPassword({ email, password });
-        if (error) throw new Error(error.message.includes('Invalid') ? 'Email o contraseña incorrectos.' : error.message.includes('confirm') ? 'Todavía no confirmaste tu email. Revisá tu casilla.' : error.message);
+        if (error) throw new Error(error.message.includes('Invalid') ? 'Usuario o contraseña incorrectos.' : error.message.includes('confirm') ? 'Todavía no confirmaste tu email. Revisá tu casilla.' : error.message);
         return iniciar();
       }
       const razon = $('#rs').value.trim();
@@ -161,12 +167,14 @@ function vAcceso(modo = 'entrar', aviso = '') {
 }
 
 function vOlvide() {
-  sheet(`${sheetHead('Recuperar contraseña', 'Te mandamos un enlace para crear una nueva.')}
+  sheet(`${sheetHead('Recuperar contraseña', 'Si entrás con usuario (sin email), pedile a Apolonia una contraseña nueva. Si te registraste con email, te mandamos un enlace.')}
     <form id="fo"><div id="oerr"></div><div class="field"><label for="oe">Email</label><input class="in" id="oe" type="email" required autocomplete="email"></div>
     <button class="btn block" id="ogo">Mandar enlace</button></form>`);
   $('#fo').onsubmit = async e => {
     e.preventDefault(); $('#ogo').disabled = true;
-    const { error } = await sb.auth.resetPasswordForEmail($('#oe').value.trim(), { redirectTo: VUELTA });
+    const v = $('#oe').value.trim();
+    if (!v.includes('@')) { $('#oerr').innerHTML = '<div class="msg info">Las cuentas con usuario no tienen email: pedile a Apolonia que te ponga una contraseña nueva.</div>'; $('#ogo').disabled = false; return; }
+    const { error } = await sb.auth.resetPasswordForEmail(v, { redirectTo: VUELTA });
     $('#oerr').innerHTML = error ? `<div class="msg bad">${esc(error.message)}</div>` : '<div class="msg good">Listo. Revisá tu email y abrí el enlace.</div>';
     $('#ogo').disabled = false;
   };
@@ -193,9 +201,7 @@ function vCompletarAlta() {
   app(`${encabezado()}<main class="pad" style="max-width:480px;margin:0 auto">
     <div class="section"><h2>Completá los datos de tu negocio</h2><p class="muted">Los necesitamos para preparar tus pedidos y armar el remito.</p></div>
     <form id="fa" class="section"><div id="aerr"></div>
-      <div class="field"><label>Tipo de cliente</label><div class="seg">
-        <label><input type="radio" name="tc" value="restaurante" checked><b>Restaurante</b><span>Porciones congeladas</span></label>
-        <label><input type="radio" name="tc" value="mayorista"><b>Mayorista</b><span>Cajas congeladas</span></label></div></div>
+      <div class="field"><label>Tipo de cliente</label>${SEG_TIPOS()}</div>
       <div class="field"><label for="rs">Nombre del negocio / razón social</label><input class="in" id="rs" required></div>
       <div class="field"><label for="ct">Persona de contacto</label><input class="in" id="ct"></div>
       <div class="field"><label for="tel">Teléfono / WhatsApp</label><input class="in" id="tel" inputmode="tel"></div>
@@ -219,7 +225,7 @@ function vPendiente() {
   app(`${encabezado(`Hola, <b>${esc(c.razon_social)}</b>`)}<main class="pad" style="max-width:480px;margin:0 auto">
     <div class="done"><div class="check" style="background:var(--yolk-soft);color:#7a5600">${svg('ok')}</div>
       <h2>Tu cuenta está en revisión</h2>
-      <p class="muted">Apolonia tiene que habilitarte como cliente ${c.tipo === 'mayorista' ? 'mayorista' : 'de restaurante'}. Apenas lo haga, vas a poder ver el catálogo y hacer pedidos desde acá.</p>
+      <p class="muted">Apolonia tiene que habilitarte como cliente de tipo ${esc(TIPO_CORTO[c.tipo].toLowerCase())}. Apenas lo haga, vas a poder ver el catálogo y hacer pedidos desde acá.</p>
       <button class="btn sec" id="rev">${svg('reload')} Ya me habilitaron, actualizar</button></div></main>`);
   conectarSalir(); $('#rev').onclick = iniciar;
 }
@@ -269,8 +275,8 @@ function vCatalogo() {
   const c = S.cliente;
   if (!S.productos.length) { $('#main').innerHTML = '<div class="empty section">Todavía no hay productos cargados para tu tipo de cliente.</div>'; return; }
   const u = S.productos[0]?.unidad;
-  $('#main').innerHTML = `<div class="section-title"><h2>${c.tipo === 'mayorista' ? 'Cajas congeladas' : 'Porciones congeladas'}</h2>
-      <span class="muted small">Precios por ${c.tipo === 'mayorista' ? 'caja' : 'porción'}</span></div>
+  $('#main').innerHTML = `<div class="section-title"><h2>${CATALOGO[c.tipo]}</h2>
+      <span class="muted small">Precios por ${esc(u || 'unidad')}</span></div>
     <div class="list">${S.productos.map(p => {
       const vs = p.variantes || [];
       return `<div class="card prod">
@@ -301,7 +307,7 @@ function barra() {
   if (!el) return;
   if (!ls.length || S.tab !== 'pedir') { el.innerHTML = ''; return; }
   const tot = ls.reduce((a, l) => a + l.sub, 0), n = ls.reduce((a, l) => a + l.q, 0);
-  el.innerHTML = `<div class="cartbar"><button class="btn dark" id="ver">${svg('cart')}<span class="grow" style="text-align:left">Revisar pedido · ${n} ${S.cliente.tipo === 'mayorista' ? (n === 1 ? 'caja' : 'cajas') : (n === 1 ? 'ítem' : 'ítems')}</span><span class="num">${money(tot)}</span></button></div>`;
+  el.innerHTML = `<div class="cartbar"><button class="btn dark" id="ver">${svg('cart')}<span class="grow" style="text-align:left">Revisar pedido · ${n} ${S.cliente.tipo === 'mayorista' ? (n === 1 ? 'caja' : 'cajas') : (n === 1 ? 'unidad' : 'unidades')}</span><span class="num">${money(tot)}</span></button></div>`;
   $('#ver').onclick = vRevisar;
 }
 
@@ -341,7 +347,7 @@ function vRevisar() {
 function tarjetaPedido(p, conCliente = false) {
   return `<button class="card order" data-p="${p.id}">
     <div class="order-top"><span class="order-num">#${esc(p.numero)}</span><span class="st ${p.estado}">${ESTADOS[p.estado]}</span></div>
-    ${conCliente ? `<div><b>${esc(p.cliente_razon_social)}</b> <span class="tipo">· ${p.tipo === 'mayorista' ? 'Mayorista' : 'Restaurante'}</span></div>` : ''}
+    ${conCliente ? `<div><b>${esc(p.cliente_razon_social)}</b> <span class="tipo">· ${TIPO_CORTO[p.tipo]}</span></div>` : ''}
     <div class="order-top"><span class="muted small">${fechaHora(p.creado_en)}${p.entrega_deseada ? ` · para el ${fechaDia(p.entrega_deseada)}` : ''}</span><span class="order-total">${money(p.total)}</span></div>
   </button>`;
 }
@@ -360,7 +366,7 @@ async function vDetalle(id) {
   const { data: items } = await sb.from('apo_pedido_items').select('*').eq('pedido_id', id).order('codigo');
   const admin = S.admin;
   sheet(`${sheetHead(`Pedido #${esc(p.numero)}`, `${fechaHora(p.creado_en)}`)}
-    ${admin ? `<div class="card" style="margin-bottom:14px"><b>${esc(p.cliente_razon_social)}</b> <span class="tipo">· ${p.tipo === 'mayorista' ? 'Mayorista' : 'Restaurante'}</span>
+    ${admin ? `<div class="card" style="margin-bottom:14px"><b>${esc(p.cliente_razon_social)}</b> <span class="tipo">· ${TIPO_CORTO[p.tipo]}</span>
       <div class="muted small">${[p.cliente_cuit && 'CUIT ' + esc(p.cliente_cuit), esc(p.cliente_direccion), esc(p.cliente_telefono)].filter(Boolean).join(' · ') || 'Sin datos de contacto'}</div></div>` : ''}
     <div class="row between" style="margin-bottom:10px"><span class="st ${p.estado}">${ESTADOS[p.estado]}</span>
       ${p.entrega_deseada ? `<span class="small">Entrega pedida: <b>${fechaDia(p.entrega_deseada)}</b></span>` : ''}</div>
@@ -397,8 +403,21 @@ function vMisDatos() {
         <div class="field"><label for="cuit">CUIT</label><input class="in" id="cuit" value="${esc(c.cuit)}"></div>
         <div class="field"><label for="dir">Dirección de entrega</label><input class="in" id="dir" value="${esc(c.direccion)}"></div>
       </div>
-      <div class="field"><label>Email</label><input class="in" value="${esc(c.email)}" disabled></div>
-      <button class="btn block" id="dg">Guardar</button></form>`;
+      <div class="field"><label>${c.email.endsWith(DOMINIO) ? 'Usuario' : 'Email'}</label><input class="in" value="${esc(usuarioDe(c.email))}" disabled></div>
+      <button class="btn block" id="dg">Guardar</button></form>
+    <div class="section-title"><h2>Contraseña</h2></div>
+    <form id="fk" class="card"><div class="field"><label for="k1">Contraseña nueva</label><input class="in" id="k1" type="password" minlength="6" autocomplete="new-password"></div>
+      <button class="btn sec block" id="kg">Cambiar contraseña</button></form>`;
+  $('#fk').onsubmit = async e => {
+    e.preventDefault();
+    const pw = $('#k1').value;
+    if (pw.length < 6) return toast('Mínimo 6 caracteres');
+    $('#kg').disabled = true;
+    const { error } = await sb.auth.updateUser({ password: pw });
+    $('#kg').disabled = false;
+    if (error) return toast(errMsg(error));
+    $('#k1').value = ''; toast('Contraseña cambiada');
+  };
   $('#fd').onsubmit = async e => {
     e.preventDefault();
     const v = { razon_social: $('#rs').value.trim(), contacto: $('#ct').value.trim(), telefono: $('#tel').value.trim(), cuit: $('#cuit').value.trim(), direccion: $('#dir').value.trim() };
@@ -471,7 +490,7 @@ async function descargarRemito(id, boton) {
 
     // Cliente
     doc.setFillColor(246, 244, 236); doc.roundedRect(M, 61, W - 2 * M, 24, 2, 2, 'F');
-    doc.setFontSize(8); doc.setTextColor(106, 103, 94); doc.text(p.tipo === 'mayorista' ? 'CLIENTE MAYORISTA' : 'CLIENTE RESTAURANTE', M + 4, 67);
+    doc.setFontSize(8); doc.setTextColor(106, 103, 94); doc.text('CLIENTE ' + TIPO_CORTO[p.tipo].toUpperCase(), M + 4, 67);
     doc.setTextColor(17, 17, 17); doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text(p.cliente_razon_social, M + 4, 73);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
     doc.text([p.cliente_cuit && 'CUIT: ' + p.cliente_cuit, p.cliente_telefono && 'Tel: ' + p.cliente_telefono].filter(Boolean).join('     ') || ' ', M + 4, 78.5);
@@ -578,20 +597,23 @@ async function aProduccion() {
     </div></div>`;
   };
   $('#main').innerHTML = `<div class="section-title"><h2>A producir</h2><span class="muted small">${ids.length} pedido${ids.length === 1 ? '' : 's'} recibido${ids.length === 1 ? '' : 's'} o en preparación</span></div>
-    ${filas.length ? bloque('restaurante', 'Porciones para restaurantes') + bloque('mayorista', 'Cajas para mayoristas') : '<div class="empty">No hay pedidos pendientes de preparar.</div>'}`;
+    ${filas.length ? Object.keys(CATALOGO).map(t => bloque(t, CATALOGO[t])).join('') : '<div class="empty">No hay pedidos pendientes de preparar.</div>'}`;
 }
 
 function aClientes() {
   const orden = { pendiente: 0, activo: 1, bloqueado: 2 };
   const cs = [...S.clientes].sort((a, b) => orden[a.estado] - orden[b.estado] || a.razon_social.localeCompare(b.razon_social));
-  $('#main').innerHTML = `<div class="section-title"><h2>Clientes</h2><span class="muted small">Los clientes se registran desde <b>${esc(location.host)}</b></span></div>
+  $('#main').innerHTML = `<div class="section-title"><h2>Clientes</h2><button class="btn small" id="nuevo-cli">+ Crear cliente</button></div>
+    <p class="muted small" style="margin-top:-4px">Podés crearles usuario y contraseña vos, o que se registren solos en <b>${esc(location.host)}</b> y los habilitás acá.</p>
     ${cs.length ? `<div class="list">${cs.map(c => `<div class="card">
       <div class="row between"><div><b style="font-size:16px">${esc(c.razon_social)}</b> <span class="st ${c.estado}">${c.estado === 'pendiente' ? 'Pendiente de aprobar' : c.estado === 'activo' ? 'Habilitado' : 'Bloqueado'}</span></div></div>
-      <div class="muted small" style="margin-top:4px">${[c.contacto, c.email, c.telefono, c.cuit && 'CUIT ' + c.cuit, c.direccion].filter(Boolean).map(esc).join(' · ')}</div>
+      <div class="muted small" style="margin-top:4px">${[c.contacto, (c.email.endsWith(DOMINIO) ? 'Usuario: ' : '') + usuarioDe(c.email), c.telefono, c.cuit && 'CUIT ' + c.cuit, c.direccion].filter(Boolean).map(esc).join(' · ')}</div>
       <div class="row" style="margin-top:12px">
         <select class="in" data-tipo="${c.user_id}" style="width:auto;min-height:40px;padding:6px 10px" aria-label="Tipo de cliente">
           <option value="restaurante" ${c.tipo === 'restaurante' ? 'selected' : ''}>Restaurante · porciones</option>
-          <option value="mayorista" ${c.tipo === 'mayorista' ? 'selected' : ''}>Mayorista · cajas</option></select>
+          <option value="mayorista" ${c.tipo === 'mayorista' ? 'selected' : ''}>Mayorista · cajas</option>
+          <option value="prepizza" ${c.tipo === 'prepizza' ? 'selected' : ''}>Pre pizzas</option></select>
+        <button class="btn sec small" data-clave="${c.user_id}">Nueva contraseña</button>
         ${c.estado !== 'activo' ? `<button class="btn good small" data-est="activo" data-u="${c.user_id}">${svg('ok')} Habilitar</button>` : ''}
         ${c.estado !== 'bloqueado' ? `<button class="btn sec small" data-est="bloqueado" data-u="${c.user_id}">Bloquear</button>` : ''}
       </div></div>`).join('')}</div>` : '<div class="empty">Todavía no se registró ningún cliente. Pasales el link de la app.</div>'}`;
@@ -602,7 +624,53 @@ function aClientes() {
     toast(estado === 'activo' ? 'Cliente habilitado' : estado === 'bloqueado' ? 'Cliente bloqueado' : 'Guardado'); vAdmin();
   };
   $$('[data-est]').forEach(b => b.onclick = () => guardar(b.dataset.u, $(`[data-tipo="${b.dataset.u}"]`).value, b.dataset.est));
+  $('#nuevo-cli').onclick = nuevoCliente;
+  $$('[data-clave]').forEach(b => b.onclick = () => nuevaClave(S.clientes.find(x => x.user_id === b.dataset.clave)));
   $$('[data-tipo]').forEach(s => s.onchange = () => { const c = S.clientes.find(x => x.user_id === s.dataset.tipo); guardar(c.user_id, s.value, c.estado); });
+}
+
+const claveAzar = () => ['pasta', 'ravioles', 'noquis', 'tallarin', 'pizza', 'muzza', 'harina', 'tomate'][Math.floor(Math.random() * 8)] + (1000 + Math.floor(Math.random() * 9000));
+
+function nuevoCliente() {
+  sheet(`${sheetHead('Crear cliente', 'Le creás usuario y contraseña. Queda habilitado para pedir.')}
+    <form id="fn"><div id="nerr"></div>
+      <div class="field"><label>Tipo de cliente</label>${SEG_TIPOS()}</div>
+      <div class="field"><label for="nr">Nombre del cliente</label><input class="in" id="nr" placeholder="Ej: Pentos Ramos"></div>
+      <div class="field"><label for="nd">Dirección de entrega</label><input class="in" id="nd"></div>
+      <div class="grid2">
+        <div class="field"><label for="nu">Usuario</label><input class="in" id="nu" autocapitalize="none" spellcheck="false" placeholder="pentos.ramos"><span class="hint">Letras, números y punto. Sin espacios.</span></div>
+        <div class="field"><label for="nk">Contraseña</label><input class="in" id="nk" value="${claveAzar()}"></div>
+      </div>
+      <button class="btn block" id="ng">Crear cliente</button></form>`);
+  $('#nr').oninput = () => { $('#nu').value = $('#nr').value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, ''); };
+  $('#fn').onsubmit = async e => {
+    e.preventDefault();
+    const v = { p_usuario: $('#nu').value.trim().toLowerCase(), p_clave: $('#nk').value.trim(), p_razon_social: $('#nr').value.trim(), p_direccion: $('#nd').value.trim(), p_tipo: $('input[name=tc]:checked').value };
+    if (v.p_razon_social.length < 2) { $('#nerr').innerHTML = '<div class="msg bad">Poné el nombre del cliente.</div>'; return; }
+    $('#ng').disabled = true;
+    const { error } = await sb.rpc('apo_crear_usuario', v);
+    if (error) { $('#nerr').innerHTML = `<div class="msg bad">${esc(errMsg(error))}</div>`; $('#ng').disabled = false; return; }
+    sheet(`${sheetHead('Cliente creado')}<div class="card"><p style="margin-top:0"><b>${esc(v.p_razon_social)}</b></p>
+      <p>Usuario: <b class="num">${esc(v.p_usuario)}</b><br>Contraseña: <b class="num">${esc(v.p_clave)}</b></p>
+      <p class="muted small" style="margin-bottom:0">Pasale estos datos y el link de la app: <b>${esc(location.host)}</b></p></div>
+      <div class="row section"><button class="btn sec grow" id="cp">Copiar datos</button><button class="btn grow" data-close>Listo</button></div>`);
+    $('#cp').onclick = async () => { try { await navigator.clipboard.writeText(`Apolonia · pedidos\n${location.origin}\nUsuario: ${v.p_usuario}\nContraseña: ${v.p_clave}`); toast('Copiado'); } catch { toast('No se pudo copiar'); } };
+    cargarAdmin();
+  };
+}
+
+function nuevaClave(c) {
+  sheet(`${sheetHead('Nueva contraseña', esc(c.razon_social))}
+    <form id="fk"><div class="field"><label for="kk">Contraseña nueva</label><input class="in" id="kk" value="${claveAzar()}"></div>
+    <button class="btn block" id="kg">Guardar</button></form>`);
+  $('#fk').onsubmit = async e => {
+    e.preventDefault(); $('#kg').disabled = true;
+    const k = $('#kk').value.trim();
+    const { error } = await sb.rpc('apo_admin_clave', { p_user: c.user_id, p_clave: k });
+    if (error) { toast(errMsg(error)); $('#kg').disabled = false; return; }
+    sheet(`${sheetHead('Contraseña cambiada')}<div class="card">Usuario: <b class="num">${esc(usuarioDe(c.email))}</b><br>Contraseña nueva: <b class="num">${esc(k)}</b></div>
+      <div class="row section"><button class="btn block" data-close>Listo</button></div>`);
+  };
 }
 
 function aProductos() {
@@ -615,7 +683,7 @@ function aProductos() {
         <input class="in price-in" id="pr-${p.id}" data-precio="${p.id}" inputmode="decimal" value="${p.precio}"></div>
     </div>`).join('')}</div>`;
   $('#main').innerHTML = `<div class="msg info section">Los cambios de precio valen para los pedidos nuevos. Los pedidos ya hechos mantienen el precio con el que se pidieron.</div>
-    ${bloque('restaurante', 'Porciones para restaurantes')}${bloque('mayorista', 'Cajas para mayoristas')}`;
+    ${Object.keys(CATALOGO).map(t => bloque(t, CATALOGO[t])).join('')}`;
   $$('[data-precio]').forEach(i => i.onchange = async () => {
     const v = Number(String(i.value).replace(/\./g, '').replace(',', '.'));
     if (!(v >= 0)) { toast('Precio inválido'); return; }
@@ -630,16 +698,16 @@ function aProductos() {
   });
   $$('[data-edit]').forEach(b => b.onclick = () => editarProducto(S.productos.find(p => p.id === b.dataset.edit)));
   $$('[data-nuevo]').forEach(b => b.onclick = () => {
-    const t = b.dataset.nuevo, pref = t === 'mayorista' ? 'C-' : 'T-';
+    const t = b.dataset.nuevo, pref = { mayorista: 'C-', restaurante: 'T-', prepizza: 'P-' }[t];
     const max = Math.max(0, ...S.productos.filter(p => p.codigo.startsWith(pref)).map(p => parseInt(p.codigo.slice(2)) || 0));
-    editarProducto({ tipo: t, codigo: pref + String(max + 1).padStart(3, '0'), nombre: '', presentacion: t === 'mayorista' ? '' : 'Porción congelada',
-      unidad: t === 'mayorista' ? 'caja' : 'porción', variantes: [], precio: '', orden: max + 1, activo: true });
+    editarProducto({ tipo: t, codigo: pref + String(max + 1).padStart(3, '0'), nombre: '', presentacion: t === 'restaurante' ? 'Porción congelada' : '',
+      unidad: { mayorista: 'caja', restaurante: 'porción', prepizza: 'unidad' }[t], variantes: [], precio: '', orden: max + 1, activo: true });
   });
 }
 
 function editarProducto(p) {
   const nuevo = !p.id;
-  sheet(`${sheetHead(nuevo ? 'Nuevo producto' : 'Editar producto', p.tipo === 'mayorista' ? 'Caja para mayoristas' : 'Porción para restaurantes')}
+  sheet(`${sheetHead(nuevo ? 'Nuevo producto' : 'Editar producto', CATALOGO[p.tipo])}
     <form id="fx"><div id="xerr"></div>
       <div class="grid2">
         <div class="field"><label for="xc">Código</label><input class="in" id="xc" value="${esc(p.codigo)}"></div>

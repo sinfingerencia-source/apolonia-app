@@ -98,7 +98,7 @@ h3{font-size:17px}
 input.in,select.in,textarea.in{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:12px 13px;min-height:46px;font-size:16px}
 textarea.in{min-height:80px;resize:vertical}
 .in:focus{outline:2px solid var(--accent);outline-offset:0;border-color:transparent}
-.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seg{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .seg label{border:1.5px solid var(--line);border-radius:14px;padding:12px;background:var(--surface);cursor:pointer;display:flex;flex-direction:column;gap:2px}
 .seg label b{font-size:15px}
 .seg label span{font-size:12.5px;color:var(--muted)}

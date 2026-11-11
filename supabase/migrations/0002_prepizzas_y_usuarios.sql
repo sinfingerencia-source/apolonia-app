@@ -1,0 +1,7 @@
+-- 11/11/2026 · Tercer tipo de cliente (pre pizzas) y cuentas con usuario + contraseña creadas por Apolonia.
+-- Aplicada en el proyecto: ver historial de migraciones en Supabase ("prepizzas_y_usuarios").
+-- Resumen:
+--  * tipo de cliente/producto/pedido admite 'prepizza'
+--  * apo_crear_usuario(usuario, clave, razon_social, direccion, tipo): crea la cuenta usuario@clientes.apolonia.invalid ya habilitada
+--    (.invalid es un dominio reservado: nunca se envía mail a esas direcciones)
+--  * apo_admin_clave(user_id, clave): el administrador pone una contraseña nueva
