@@ -446,7 +446,7 @@ let _logo = null;
 async function logoDataUrl() {
   if (_logo) return _logo;
   try {
-    const b = await (await fetch('/logo.png')).blob();
+    const b = await (await fetch('/logo-remito.png')).blob();
     _logo = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); });
   } catch { _logo = null; }
   return _logo;
@@ -472,7 +472,7 @@ async function descargarRemito(id, boton) {
     // Encabezado
     doc.setFillColor(253, 233, 12); doc.rect(0, 0, W, 34, 'F');
     const logo = await logoDataUrl();
-    if (logo) doc.addImage(logo, 'PNG', M, 6, 66, 66 * 271 / 823);
+    if (logo) doc.addImage(logo, 'PNG', M, 6, 66, 66 * 271 / 823, 'logo', 'FAST');
     else { doc.setTextColor(17, 17, 17); doc.setFont('helvetica', 'bold'); doc.setFontSize(24); doc.text('Apolonia', M, 19); }
     doc.setFont('helvetica', 'normal'); doc.setTextColor(17, 17, 17); doc.setFontSize(8.5);
     const emisor = [c.razon_social, c.cuit && 'CUIT ' + c.cuit, c.direccion, [c.telefono, c.email].filter(Boolean).join(' · ')].filter(Boolean);
