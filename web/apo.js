@@ -242,7 +242,7 @@ function vBloqueado() {
 // =====================================================================
 async function cargarCliente() {
   const [pr, pe, cf] = await Promise.all([
-    sb.from('apo_productos').select('*').order('orden'),
+    sb.rpc('apo_mi_catalogo'),
     sb.from('apo_pedidos').select('*').order('creado_en', { ascending: false }).limit(60),
     sb.from('apo_config').select('*').maybeSingle()
   ]);
@@ -258,7 +258,7 @@ async function cargarCliente() {
 function vCliente() {
   const c = S.cliente;
   const tabs = [['pedir', 'Hacer pedido'], ['pedidos', 'Mis pedidos'], ['cuenta', 'Mis datos']];
-  app(`${encabezado(`<b>${esc(c.razon_social)}</b> · ${esc(TIPOS[c.tipo])}`)}
+  app(`${encabezado(`<b>${esc(c.razon_social)}</b> · ${[c.tipo, ...(c.tipos_extra || [])].map(t => esc(TIPOS[t])).join(' + ')}`)}
     <nav class="tabs pad" role="tablist">${tabs.map(([k, t]) => `<button class="tab" role="tab" data-t="${k}" aria-selected="${S.tab === k}">${t}</button>`).join('')}</nav>
     <main class="pad" id="main"></main><div id="cartbar"></div>`);
   conectarSalir();
@@ -276,10 +276,10 @@ function stepper(key, q) {
 function vCatalogo() {
   const c = S.cliente;
   if (!S.productos.length) { $('#main').innerHTML = '<div class="empty section">Todavía no hay productos cargados para tu tipo de cliente.</div>'; return; }
-  const u = S.productos[0]?.unidad;
-  $('#main').innerHTML = `<div class="section-title"><h2>${CATALOGO[c.tipo]}</h2>
-      <span class="muted small">Precios por ${esc(u || 'unidad')}</span></div>
-    <div class="list">${S.productos.map(p => {
+  const tipos = [...new Set(S.productos.map(p => p.tipo))];
+  $('#main').innerHTML = tipos.map(t => { const ps = S.productos.filter(p => p.tipo === t); return `<div class="section-title"><h2>${CATALOGO[t]}</h2>
+      <span class="muted small">Precios por ${esc(ps[0]?.unidad || 'unidad')}</span></div>
+    <div class="list">${ps.map(p => {
       const vs = p.variantes || [];
       return `<div class="card prod">
         <div><div class="prod-name">${esc(p.nombre)}</div><div class="prod-meta"><span class="code">${esc(p.codigo)}</span>${esc(p.presentacion)}</div></div>
@@ -287,7 +287,7 @@ function vCatalogo() {
           <div class="variants">${vs.map(v => `<div class="var-row"><span>${esc(v)}</span>${stepper(ck(p.id, v), S.carrito[ck(p.id, v)])}</div>`).join('')}</div>`
         : `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px"><div class="prod-price">${money(p.precio)} <small>c/${esc(p.unidad)}</small></div>${stepper(ck(p.id, ''), S.carrito[ck(p.id, '')])}</div>`}
       </div>`;
-    }).join('')}</div>`;
+    }).join('')}</div>`; }).join('');
   $$('#main .stepper').forEach(st => {
     const k = st.dataset.k, inp = st.querySelector('input');
     const set = q => {
@@ -533,12 +533,14 @@ async function descargarRemito(id, boton) {
 // Panel de Apolonia (dueño)
 // =====================================================================
 async function cargarAdmin() {
-  const [pe, cl, pr, cf] = await Promise.all([
+  const [pe, cl, pr, cf, pc] = await Promise.all([
     sb.from('apo_pedidos').select('*').order('creado_en', { ascending: false }).limit(300),
     sb.from('apo_clientes').select('*').order('creado_en', { ascending: false }),
     sb.from('apo_productos').select('*').order('tipo').order('orden'),
-    sb.from('apo_config').select('*').maybeSingle()
+    sb.from('apo_config').select('*').maybeSingle(),
+    sb.from('apo_precios_cliente').select('*')
   ]);
+  S.precios = (pc.data || []).map(x => ({ ...x, precio: Number(x.precio) }));
   S.pedidos = pe.data || []; S.clientes = cl.data || [];
   S.productos = (pr.data || []).map(p => ({ ...p, precio: Number(p.precio) })); S.config = cf.data;
   vAdmin();
@@ -586,8 +588,8 @@ async function aProduccion() {
   const grupo = {};
   for (const i of items) {
     const ped = S.pedidos.find(p => p.id === i.pedido_id);
-    const k = ped.tipo + '|' + i.codigo + '|' + i.variante;
-    grupo[k] = grupo[k] || { tipo: ped.tipo, codigo: i.codigo, nombre: i.nombre, variante: i.variante, unidad: i.unidad, presentacion: i.presentacion, q: 0 };
+    const tp = i.tipo || ped.tipo, k = tp + '|' + i.codigo + '|' + i.variante;
+    grupo[k] = grupo[k] || { tipo: tp, codigo: i.codigo, nombre: i.nombre, variante: i.variante, unidad: i.unidad, presentacion: i.presentacion, q: 0 };
     grupo[k].q += i.cantidad;
   }
   const filas = Object.values(grupo).sort((a, b) => a.codigo.localeCompare(b.codigo) || a.variante.localeCompare(b.variante));
@@ -615,6 +617,8 @@ function aClientes() {
           <option value="restaurante" ${c.tipo === 'restaurante' ? 'selected' : ''}>Restaurante · porciones</option>
           <option value="mayorista" ${c.tipo === 'mayorista' ? 'selected' : ''}>Mayorista · cajas</option>
           <option value="prepizza" ${c.tipo === 'prepizza' ? 'selected' : ''}>Pre pizzas</option></select>
+        <span class="small muted">También ve:</span>${Object.keys(CATALOGO).filter(t => t !== c.tipo).map(t => `<label class="switch small"><input type="checkbox" data-extra="${c.user_id}" value="${t}" ${(c.tipos_extra || []).includes(t) ? 'checked' : ''}> ${TIPO_CORTO[t]}</label>`).join('')}
+        <button class="btn sec small" data-preciosc="${c.user_id}">Precios${(S.precios || []).some(x => x.cliente_id === c.user_id) ? ' propios' : ''}</button>
         <button class="btn sec small" data-clave="${c.user_id}">Nueva contraseña</button>
         ${c.estado !== 'activo' ? `<button class="btn good small" data-est="activo" data-u="${c.user_id}">${svg('ok')} Habilitar</button>` : ''}
         ${c.estado !== 'bloqueado' ? `<button class="btn sec small" data-est="bloqueado" data-u="${c.user_id}">Bloquear</button>` : ''}
@@ -628,6 +632,13 @@ function aClientes() {
   $$('[data-est]').forEach(b => b.onclick = () => guardar(b.dataset.u, $(`[data-tipo="${b.dataset.u}"]`).value, b.dataset.est));
   $('#nuevo-cli').onclick = nuevoCliente;
   $$('[data-clave]').forEach(b => b.onclick = () => nuevaClave(S.clientes.find(x => x.user_id === b.dataset.clave)));
+  $$('[data-extra]').forEach(i => i.onchange = async () => {
+    const u = i.dataset.extra, tipos = $$(`[data-extra="${u}"]:checked`).map(x => x.value);
+    const { error } = await sb.rpc('apo_admin_tipos_extra', { p_user: u, p_tipos: tipos });
+    if (error) return toast(errMsg(error));
+    S.clientes.find(x => x.user_id === u).tipos_extra = tipos; toast('Catálogos actualizados');
+  });
+  $$('[data-preciosc]').forEach(b => b.onclick = () => preciosCliente(S.clientes.find(x => x.user_id === b.dataset.preciosc)));
   $$('[data-tipo]').forEach(s => s.onchange = () => { const c = S.clientes.find(x => x.user_id === s.dataset.tipo); guardar(c.user_id, s.value, c.estado); });
 }
 
@@ -675,13 +686,36 @@ function nuevaClave(c) {
   };
 }
 
+function preciosCliente(c) {
+  const ps = S.productos.filter(p => p.tipo === c.tipo || (c.tipos_extra || []).includes(p.tipo));
+  const propio = id => S.precios.find(x => x.cliente_id === c.user_id && x.producto_id === id);
+  sheet(`${sheetHead('Precios de ' + esc(c.razon_social), esc(CATALOGO[c.tipo]))}
+    <div class="msg info">Si le ponés precio propio a algún producto, este cliente ve <b>solo</b> los productos con precio propio. Si dejás todo vacío, ve los productos generales a precio general.</div>
+    <form id="fpc"><div class="list">${ps.map(p => `<div class="card prod ${p.activo ? '' : 'off'}">
+      <div><div class="prod-name">${esc(p.nombre)}</div><div class="prod-meta"><span class="code">${esc(p.codigo)}</span>${p.general ? 'General: ' + money(p.precio) : 'Solo con precio propio'}</div></div>
+      <div style="text-align:right"><label class="small muted" for="pc-${p.id}">Precio propio</label><br>
+        <input class="in price-in" id="pc-${p.id}" data-pp="${p.id}" inputmode="decimal" placeholder="—" value="${propio(p.id) ? propio(p.id).precio : ''}"></div></div>`).join('')}</div>
+    <button class="btn block section" id="pcg">Guardar precios</button></form>`);
+  $('#fpc').onsubmit = async e => {
+    e.preventDefault(); $('#pcg').disabled = true;
+    for (const i of $$('[data-pp]')) {
+      const raw = i.value.trim(), id = i.dataset.pp;
+      const r = raw === '' ? await sb.from('apo_precios_cliente').delete().eq('cliente_id', c.user_id).eq('producto_id', id)
+        : await sb.from('apo_precios_cliente').upsert({ cliente_id: c.user_id, producto_id: id, precio: Number(raw.replace(/\./g, '').replace(',', '.')) });
+      if (r.error) { toast(errMsg(r.error)); $('#pcg').disabled = false; return; }
+    }
+    cerrar(); toast('Precios guardados'); cargarAdmin();
+  };
+}
+
 function aProductos() {
   const bloque = (tipo, titulo) => `<div class="section-title"><h2>${titulo}</h2><button class="btn sec small" data-nuevo="${tipo}">+ Agregar</button></div>
     <div class="list">${S.productos.filter(p => p.tipo === tipo).map(p => `<div class="card prod ${p.activo ? '' : 'off'}">
       <div><div class="prod-name">${esc(p.nombre)}</div><div class="prod-meta"><span class="code">${esc(p.codigo)}</span>${esc(p.presentacion)}${p.variantes?.length ? ' · ' + p.variantes.map(esc).join(' / ') : ''}</div>
+        ${(() => { const n = (S.precios || []).filter(x => x.producto_id === p.id).length; return (p.general ? '' : '<div class="small" style="margin-top:4px"><b>Solo clientes con precio propio</b></div>') + (n ? `<div class="small muted">${n} cliente${n === 1 ? '' : 's'} con precio propio</div>` : ''); })()}
         <div class="row" style="margin-top:8px"><label class="switch"><input type="checkbox" data-act="${p.id}" ${p.activo ? 'checked' : ''}> ${p.activo ? 'Visible' : 'Oculto'}</label>
         <button class="link small" data-edit="${p.id}">Editar</button></div></div>
-      <div style="text-align:right"><label class="small muted" for="pr-${p.id}">Precio por ${esc(p.unidad)}</label><br>
+      <div style="text-align:right"><label class="small muted" for="pr-${p.id}">Precio general</label><br>
         <input class="in price-in" id="pr-${p.id}" data-precio="${p.id}" inputmode="decimal" value="${p.precio}"></div>
     </div>`).join('')}</div>`;
   $('#main').innerHTML = `<div class="msg info section">Los cambios de precio valen para los pedidos nuevos. Los pedidos ya hechos mantienen el precio con el que se pidieron.</div>
@@ -703,7 +737,7 @@ function aProductos() {
     const t = b.dataset.nuevo, pref = { mayorista: 'C-', restaurante: 'T-', prepizza: 'P-' }[t];
     const max = Math.max(0, ...S.productos.filter(p => p.codigo.startsWith(pref)).map(p => parseInt(p.codigo.slice(2)) || 0));
     editarProducto({ tipo: t, codigo: pref + String(max + 1).padStart(3, '0'), nombre: '', presentacion: t === 'restaurante' ? 'Porción congelada' : '',
-      unidad: { mayorista: 'caja', restaurante: 'porción', prepizza: 'unidad' }[t], variantes: [], precio: '', orden: max + 1, activo: true });
+      unidad: { mayorista: 'caja', restaurante: 'porción', prepizza: 'unidad' }[t], variantes: [], precio: '', orden: max + 1, activo: true, general: true });
   });
 }
 
@@ -722,12 +756,13 @@ function editarProducto(p) {
       </div>
       <div class="field"><label for="xv">Opciones a elegir <span class="muted">(opcional)</span></label><input class="in" id="xv" value="${esc((p.variantes || []).join(', '))}" placeholder="Ej: Carne, Jamón y queso">
         <span class="hint">Separadas por coma. El cliente elige cuántas quiere de cada una.</span></div>
+      <label class="switch" style="margin-bottom:16px"><input type="checkbox" id="xgen" ${p.general !== false ? 'checked' : ''}> Lo ven todos los clientes de este tipo al precio general</label>
       <button class="btn block" id="xg">Guardar</button></form>`);
   $('#fx').onsubmit = async e => {
     e.preventDefault();
     const v = { tipo: p.tipo, codigo: $('#xc').value.trim(), nombre: $('#xn').value.trim(), presentacion: $('#xpr').value.trim(), unidad: $('#xu').value,
       variantes: $('#xv').value.split(',').map(s => s.trim()).filter(Boolean), precio: Number(String($('#xp').value).replace(/\./g, '').replace(',', '.')),
-      orden: p.orden, actualizado_en: new Date().toISOString() };
+      orden: p.orden, general: $('#xgen').checked, actualizado_en: new Date().toISOString() };
     if (!v.codigo || !v.nombre || !(v.precio >= 0) || $('#xp').value === '') { $('#xerr').innerHTML = '<div class="msg bad">Completá código, nombre y precio.</div>'; return; }
     $('#xg').disabled = true;
     const { error } = nuevo ? await sb.from('apo_productos').insert(v) : await sb.from('apo_productos').update(v).eq('id', p.id);
@@ -789,8 +824,8 @@ function pProducir() {
   const activos = S.pedidos.filter(p => p.estado === 'recibido' || p.estado === 'en_preparacion');
   const g = {};
   for (const p of activos) for (const i of p.items || []) {
-    const k = p.tipo + '|' + i.codigo + '|' + i.variante;
-    g[k] = g[k] || { tipo: p.tipo, ...i, cantidad: 0, pedidos: new Set() };
+    const tp = i.tipo || p.tipo, k = tp + '|' + i.codigo + '|' + i.variante;
+    g[k] = g[k] || { ...i, tipo: tp, cantidad: 0, pedidos: new Set() };
     g[k].cantidad += i.cantidad; g[k].pedidos.add(p.numero);
   }
   const filas = Object.values(g).sort((a, b) => a.codigo.localeCompare(b.codigo) || a.variante.localeCompare(b.variante));

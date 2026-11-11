@@ -1,0 +1,7 @@
+-- 11/11/2026 · Aplicadas en Supabase como "precios_por_cliente" y "clientes_con_varios_catalogos".
+--  * apo_precios_cliente: precio propio por cliente y producto. Si un cliente tiene precios propios en un tipo,
+--    en ese tipo ve solo esos productos; si no, ve los productos "generales" (apo_productos.general) a precio general.
+--  * Los clientes leen el catálogo con apo_mi_catalogo() (no ven precios de otros clientes).
+--  * apo_clientes.tipos_extra: catálogos adicionales (ej. Armonium SPA: pre pizzas + cajas). apo_admin_tipos_extra().
+--  * apo_pedido_items.tipo: tipo de cada renglón (para agrupar en "A producir").
+--  * Productos P-001 Pre pizza (sin muzza, solo con precio propio) y P-002 Pre pizza con muzza ($5.000 general).
