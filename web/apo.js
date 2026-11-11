@@ -91,7 +91,7 @@ async function iniciar() {
 }
 
 function encabezado(sub) {
-  return `<header class="head pad"><div class="head-row"><div class="brand">Apolonia<small>Fábrica de pastas · pedidos</small></div>
+  return `<header class="head pad"><div class="head-row"><div class="brand"><img src="/logo.png" alt="Apolonia · La Fábrica"></div>
     <button class="icon-btn" id="salir" aria-label="Cerrar sesión" title="Cerrar sesión">${svg('out')}</button></div>
     ${sub ? `<div class="who">${sub}</div>` : ''}</header>`;
 }
@@ -102,7 +102,7 @@ function conectarSalir() { const b = $('#salir'); if (b) b.onclick = async () =>
 // =====================================================================
 function vAcceso(modo = 'entrar', aviso = '') {
   const alta = modo === 'alta';
-  app(`<div class="auth-hero"><h1>Apolonia</h1><p>Pedidos mayoristas de pastas congeladas para restaurantes y distribuidores.</p></div>
+  app(`<div class="auth-hero"><img src="/logo.png" alt="Apolonia · La Fábrica"><p>Pedidos mayoristas de pastas congeladas para restaurantes y distribuidores.</p></div>
   <div class="auth pad">
     <div class="tabs" role="tablist" style="position:static;padding-top:0">
       <button class="tab" role="tab" aria-selected="${!alta}" data-m="entrar">Ya tengo cuenta</button>
@@ -421,6 +421,15 @@ function cargarScript(src) {
     document.head.appendChild(s);
   });
 }
+let _logo = null;
+async function logoDataUrl() {
+  if (_logo) return _logo;
+  try {
+    const b = await (await fetch('/logo.png')).blob();
+    _logo = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); });
+  } catch { _logo = null; }
+  return _logo;
+}
 async function descargarRemito(id, boton) {
   const txt = boton?.innerHTML;
   if (boton) { boton.disabled = true; boton.textContent = 'Generando…'; }
@@ -433,24 +442,24 @@ async function descargarRemito(id, boton) {
       sb.from('apo_config').select('*').maybeSingle()
     ]);
     if (e1 || e2) throw (e1 || e2);
-    const c = cfg || { razon_social: 'Apolonia · Fábrica de Pastas', cuit: '', direccion: '', telefono: '', email: '', leyenda_remito: '' };
+    const c = cfg || { razon_social: 'Apolonia · La Fábrica', cuit: '', direccion: '', telefono: '', email: '', leyenda_remito: '' };
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
     const W = 210, M = 14;
     const ARS = n => '$ ' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     // Encabezado
-    doc.setFillColor(35, 26, 18); doc.rect(0, 0, W, 34, 'F');
-    doc.setTextColor(251, 243, 226); doc.setFont('times', 'bold'); doc.setFontSize(24); doc.text('Apolonia', M, 17);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(242, 182, 48);
-    doc.text('FÁBRICA DE PASTAS', M, 23);
-    doc.setTextColor(251, 243, 226); doc.setFontSize(8.5);
+    doc.setFillColor(253, 233, 12); doc.rect(0, 0, W, 34, 'F');
+    const logo = await logoDataUrl();
+    if (logo) doc.addImage(logo, 'PNG', M, 6, 66, 66 * 271 / 823);
+    else { doc.setTextColor(17, 17, 17); doc.setFont('helvetica', 'bold'); doc.setFontSize(24); doc.text('Apolonia', M, 19); }
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(17, 17, 17); doc.setFontSize(8.5);
     const emisor = [c.razon_social, c.cuit && 'CUIT ' + c.cuit, c.direccion, [c.telefono, c.email].filter(Boolean).join(' · ')].filter(Boolean);
     doc.text(emisor, W - M, 11, { align: 'right' });
 
     // Caja del comprobante
-    doc.setTextColor(35, 26, 18);
-    doc.setDrawColor(35, 26, 18); doc.setLineWidth(0.4);
+    doc.setTextColor(17, 17, 17);
+    doc.setDrawColor(17, 17, 17); doc.setLineWidth(0.4);
     doc.rect(W / 2 - 8, 38, 16, 14); doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.text('X', W / 2, 48, { align: 'center' });
     doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.text('NO VÁLIDO COMO FACTURA', W / 2, 56, { align: 'center' });
     doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.text('REMITO', M, 45);
@@ -461,9 +470,9 @@ async function descargarRemito(id, boton) {
     if (p.remito_oficial) { doc.setFontSize(8.5); doc.text(`Remito oficial: ${p.remito_oficial}`, W - M, 56, { align: 'right' }); }
 
     // Cliente
-    doc.setFillColor(247, 242, 232); doc.roundedRect(M, 61, W - 2 * M, 24, 2, 2, 'F');
-    doc.setFontSize(8); doc.setTextColor(117, 104, 90); doc.text(p.tipo === 'mayorista' ? 'CLIENTE MAYORISTA' : 'CLIENTE RESTAURANTE', M + 4, 67);
-    doc.setTextColor(35, 26, 18); doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text(p.cliente_razon_social, M + 4, 73);
+    doc.setFillColor(246, 244, 236); doc.roundedRect(M, 61, W - 2 * M, 24, 2, 2, 'F');
+    doc.setFontSize(8); doc.setTextColor(106, 103, 94); doc.text(p.tipo === 'mayorista' ? 'CLIENTE MAYORISTA' : 'CLIENTE RESTAURANTE', M + 4, 67);
+    doc.setTextColor(17, 17, 17); doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text(p.cliente_razon_social, M + 4, 73);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
     doc.text([p.cliente_cuit && 'CUIT: ' + p.cliente_cuit, p.cliente_telefono && 'Tel: ' + p.cliente_telefono].filter(Boolean).join('     ') || ' ', M + 4, 78.5);
     doc.text(p.cliente_direccion ? 'Entregar en: ' + p.cliente_direccion : ' ', M + 4, 83, { maxWidth: W - 2 * M - 8 });
@@ -475,9 +484,9 @@ async function descargarRemito(id, boton) {
       body: items.map(i => [i.codigo, i.nombre + (i.variante ? ' · ' + i.variante : ''), i.presentacion, String(i.cantidad), ARS(i.precio), ARS(i.subtotal)]),
       foot: [['', '', '', String(items.reduce((a, i) => a + i.cantidad, 0)), 'TOTAL', ARS(p.total)]],
       theme: 'grid',
-      styles: { font: 'helvetica', fontSize: 9, cellPadding: 2.4, lineColor: [226, 215, 195], lineWidth: 0.2, textColor: [35, 26, 18] },
-      headStyles: { fillColor: [184, 64, 31], textColor: 255, fontStyle: 'bold' },
-      footStyles: { fillColor: [251, 237, 198], textColor: [35, 26, 18], fontStyle: 'bold', fontSize: 10.5 },
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 2.4, lineColor: [224, 220, 205], lineWidth: 0.2, textColor: [17, 17, 17] },
+      headStyles: { fillColor: [17, 17, 17], textColor: [253, 233, 12], fontStyle: 'bold' },
+      footStyles: { fillColor: [253, 233, 12], textColor: [17, 17, 17], fontStyle: 'bold', fontSize: 10.5 },
       columnStyles: { 0: { cellWidth: 18 }, 3: { halign: 'right', cellWidth: 15 }, 4: { halign: 'right', cellWidth: 26 }, 5: { halign: 'right', cellWidth: 30 } }
     });
     let y = doc.lastAutoTable.finalY + 8;

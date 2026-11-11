@@ -11,7 +11,7 @@
 -- ─────────────────────────────────────────────────────────────
 create table apo_config (
   id int primary key default 1 check (id = 1),
-  razon_social text not null default 'Apolonia · Fábrica de Pastas',
+  razon_social text not null default 'Apolonia · La Fábrica',
   cuit text not null default '',
   direccion text not null default '',
   telefono text not null default '',
