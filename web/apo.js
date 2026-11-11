@@ -89,6 +89,8 @@ async function iniciar() {
   const { data: esAdmin } = await sb.rpc('apo_es_admin');
   S.admin = !!esAdmin;
   if (S.admin) { S.tab = S.tab || 'pedidos'; return cargarAdmin(); }
+  const { data: rol } = await sb.rpc('apo_mi_rol');
+  if (rol === 'produccion') { S.tab = S.tab || 'producir'; return cargarProd(); }
   const { data: c } = await sb.from('apo_clientes').select('*').eq('user_id', S.user.id).maybeSingle();
   S.cliente = c;
   if (!c) return vCompletarAlta();
@@ -757,6 +759,68 @@ function aDatos() {
     if (error) return toast(errMsg(error));
     S.config = { ...c, ...v }; toast('Datos guardados');
   };
+}
+
+// =====================================================================
+// Jefe de producción: qué producir y qué despachar. Sin precios ni datos comerciales.
+// =====================================================================
+const SIGUIENTE = { recibido: ['en_preparacion', 'Empezar a preparar'], en_preparacion: ['enviado', 'Marcar enviado'], enviado: ['entregado', 'Marcar entregado'] };
+
+async function cargarProd() {
+  const { data, error } = await sb.rpc('apo_prod_pedidos');
+  if (error) { toast(errMsg(error)); S.pedidos = []; } else S.pedidos = data || [];
+  vProd();
+}
+
+function vProd() {
+  const pend = S.pedidos.filter(p => p.estado === 'recibido').length;
+  const tabs = [['producir', 'A producir', 0], ['preparar', 'Pedidos', pend]];
+  app(`${encabezado('Producción')}
+    <nav class="tabs pad" role="tablist">${tabs.map(([k, t, n]) => `<button class="tab" role="tab" data-t="${k}" aria-selected="${S.tab === k}">${t}${n ? `<span class="pill">${n}</span>` : ''}</button>`).join('')}
+      <button class="tab" id="rf" style="margin-left:auto">${svg('reload')} Actualizar</button></nav>
+    <main class="pad" id="main"></main>`);
+  conectarSalir();
+  $$('[data-t]').forEach(b => b.onclick = () => { S.tab = b.dataset.t; vProd(); });
+  $('#rf').onclick = cargarProd;
+  (S.tab === 'producir' ? pProducir : pPedidos)();
+}
+
+function pProducir() {
+  const activos = S.pedidos.filter(p => p.estado === 'recibido' || p.estado === 'en_preparacion');
+  const g = {};
+  for (const p of activos) for (const i of p.items || []) {
+    const k = p.tipo + '|' + i.codigo + '|' + i.variante;
+    g[k] = g[k] || { tipo: p.tipo, ...i, cantidad: 0, pedidos: new Set() };
+    g[k].cantidad += i.cantidad; g[k].pedidos.add(p.numero);
+  }
+  const filas = Object.values(g).sort((a, b) => a.codigo.localeCompare(b.codigo) || a.variante.localeCompare(b.variante));
+  const bloque = t => {
+    const fs = filas.filter(f => f.tipo === t);
+    return fs.length ? `<div class="card section"><h3 style="margin-bottom:12px">${CATALOGO[t]}</h3><div class="produce" style="font-size:16px;gap:10px 12px">
+      ${fs.map(f => `<span><b style="font-family:inherit">${esc(f.nombre)}</b>${f.variante ? ` · ${esc(f.variante)}` : ''}<br><span class="muted small">${esc(f.presentacion)} · pedidos ${[...f.pedidos].map(n => '#' + n).join(', ')}</span></span>
+        <b style="font-size:18px">${unidades(f.cantidad, f.unidad)}</b>`).join('')}</div></div>` : '';
+  };
+  $('#main').innerHTML = `<div class="section-title"><h2>A producir</h2><span class="muted small">${activos.length} pedido${activos.length === 1 ? '' : 's'} sin despachar</span></div>
+    ${filas.length ? Object.keys(CATALOGO).map(bloque).join('') : '<div class="empty">No hay nada pendiente de producir.</div>'}`;
+}
+
+function pPedidos() {
+  const orden = { recibido: 0, en_preparacion: 1, enviado: 2, entregado: 3 };
+  const ps = [...S.pedidos].sort((a, b) => orden[a.estado] - orden[b.estado] || (a.entrega_deseada || '9999').localeCompare(b.entrega_deseada || '9999') || a.numero - b.numero);
+  $('#main').innerHTML = `<div class="section-title"><h2>Pedidos</h2><span class="muted small">Del más urgente al último</span></div>
+    ${ps.length ? `<div class="list">${ps.map(p => `<div class="card">
+      <div class="order-top"><span><span class="order-num">#${esc(p.numero)}</span> · <b>${esc(p.cliente)}</b> <span class="tipo">${TIPO_CORTO[p.tipo]}</span></span><span class="st ${p.estado}">${ESTADOS[p.estado]}</span></div>
+      <div class="muted small" style="margin:4px 0 10px">Pedido ${fechaHora(p.creado_en)}${p.entrega_deseada ? ` · <b style="color:var(--fg)">Entregar el ${fechaDia(p.entrega_deseada)}</b>` : ''}${p.direccion ? ` · ${esc(p.direccion)}` : ''}</div>
+      <table class="items"><tbody>${(p.items || []).map(i => `<tr><td>${esc(i.nombre)}${i.variante ? ` · <b>${esc(i.variante)}</b>` : ''} <span class="muted small">${esc(i.presentacion)}</span></td><td class="r num"><b>${unidades(i.cantidad, i.unidad)}</b></td></tr>`).join('')}</tbody></table>
+      ${p.nota ? `<div class="msg info" style="margin:10px 0 0"><b>Nota:</b> ${esc(p.nota)}</div>` : ''}
+      ${SIGUIENTE[p.estado] ? `<button class="btn ${p.estado === 'recibido' ? '' : 'dark'} block" style="margin-top:12px" data-av="${p.id}" data-est="${SIGUIENTE[p.estado][0]}">${SIGUIENTE[p.estado][1]}</button>` : ''}
+    </div>`).join('')}</div>` : '<div class="empty">No hay pedidos pendientes.</div>'}`;
+  $$('[data-av]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    const { error } = await sb.rpc('apo_prod_estado', { p_pedido: b.dataset.av, p_estado: b.dataset.est });
+    if (error) { toast(errMsg(error)); b.disabled = false; return; }
+    toast('Pedido actualizado'); cargarProd();
+  });
 }
 
 // ---------- Eventos de sesión ----------

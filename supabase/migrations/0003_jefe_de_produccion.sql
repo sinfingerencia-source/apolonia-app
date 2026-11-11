@@ -1,0 +1,4 @@
+-- 11/11/2026 · Rol de producción (aplicada en Supabase como "jefe_de_produccion").
+--  * apo_admins.rol: 'admin' o 'produccion'
+--  * apo_mi_rol(), apo_prod_pedidos() (pedidos sin precios ni totales), apo_prod_estado(pedido, estado)
+--  * apo_crear_equipo(usuario, clave, rol): cuentas del equipo, se corre desde el SQL Editor
