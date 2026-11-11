@@ -5,3 +5,4 @@
 --  * apo_clientes.tipos_extra: catálogos adicionales (ej. Armonium SPA: pre pizzas + cajas). apo_admin_tipos_extra().
 --  * apo_pedido_items.tipo: tipo de cada renglón (para agrupar en "A producir").
 --  * Productos P-001 Pre pizza (sin muzza, solo con precio propio) y P-002 Pre pizza con muzza ($5.000 general).
+-- 11/11/2026 12:33 · Empanadas (T-016) a $2.000; nuevo T-017 Tartas (Bicolor / Verdura) a $3.500, catálogo restaurantes.
