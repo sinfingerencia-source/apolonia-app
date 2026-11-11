@@ -1,0 +1,6 @@
+-- 11/11/2026 · Aplicada en Supabase como "stock_materia_prima_y_terminados".
+--  * apo_insumos (materia prima, con stock mínimo), apo_stock_productos (terminados por producto y variante),
+--    apo_movimientos_stock (historial: ingreso, uso, producción, despacho, devolución, conteo).
+--  * apo_stock_datos(), apo_stock_mover(clase, ref, variante, tipo, cantidad, nota), apo_insumo_guardar(...): solo equipo (admin/producción).
+--  * Trigger apo_pedido_stock: al pasar un pedido a Enviado/Entregado descuenta los terminados una vez; si se cancela, los devuelve.
+--  * 23 insumos iniciales con stock 0.

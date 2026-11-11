@@ -549,13 +549,13 @@ async function cargarAdmin() {
 function vAdmin() {
   const pend = S.clientes.filter(c => c.estado === 'pendiente').length;
   const nuevos = S.pedidos.filter(p => p.estado === 'recibido').length;
-  const tabs = [['pedidos', 'Pedidos', nuevos], ['produccion', 'A producir', 0], ['clientes', 'Clientes', pend], ['productos', 'Productos y precios', 0], ['datos', 'Datos del remito', 0]];
+  const tabs = [['pedidos', 'Pedidos', nuevos], ['produccion', 'A producir', 0], ['clientes', 'Clientes', pend], ['stock', 'Stock', 0], ['productos', 'Productos y precios', 0], ['datos', 'Datos del remito', 0]];
   app(`${encabezado('Panel de administración')}
     <nav class="tabs pad" role="tablist">${tabs.map(([k, t, n]) => `<button class="tab" role="tab" data-t="${k}" aria-selected="${S.tab === k}">${t}${n ? `<span class="pill">${n}</span>` : ''}</button>`).join('')}</nav>
     <main class="pad" id="main"></main>`);
   conectarSalir();
   $$('[data-t]').forEach(b => b.onclick = () => { S.tab = b.dataset.t; vAdmin(); });
-  ({ pedidos: aPedidos, produccion: aProduccion, clientes: aClientes, productos: aProductos, datos: aDatos })[S.tab]();
+  ({ pedidos: aPedidos, produccion: aProduccion, clientes: aClientes, productos: aProductos, datos: aDatos, stock: aStock })[S.tab]();
 }
 
 function aPedidos() {
@@ -708,6 +708,20 @@ function preciosCliente(c) {
   };
 }
 
+async function aStock() {
+  $('#main').innerHTML = '<div class="loading" style="min-height:200px"><div class="spin"></div></div>';
+  await cargarStock();
+  S.stockModo = S.stockModo || 'terminados';
+  const pinta = () => {
+    $('#main').innerHTML = `<div class="row section"><button class="tab" data-sm="terminados" aria-selected="${S.stockModo === 'terminados'}">Productos terminados</button><button class="tab" data-sm="insumos" aria-selected="${S.stockModo === 'insumos'}">Materia prima</button></div><div id="stk"></div>`;
+    $$('[data-sm]').forEach(b => b.onclick = () => { S.stockModo = b.dataset.sm; pinta(); });
+    const main = $('#main'); main.id = 'main-x'; $('#stk').id = 'main';
+    vStock(S.stockModo, aStock);
+    $('#main').id = 'stk'; main.id = 'main';
+  };
+  pinta();
+}
+
 function aProductos() {
   const bloque = (tipo, titulo) => `<div class="section-title"><h2>${titulo}</h2><button class="btn sec small" data-nuevo="${tipo}">+ Agregar</button></div>
     <div class="list">${S.productos.filter(p => p.tipo === tipo).map(p => `<div class="card prod ${p.activo ? '' : 'off'}">
@@ -797,6 +811,90 @@ function aDatos() {
 }
 
 // =====================================================================
+// Stock: productos terminados y materia prima (equipo: admin y producción)
+// =====================================================================
+const fmtN = n => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 3 });
+const MOV = { ingreso: 'Ingreso', uso: 'Uso', produccion: 'Producción', despacho: 'Despacho', devolucion: 'Devolución', ajuste: 'Conteo' };
+
+async function cargarStock() {
+  const { data, error } = await sb.rpc('apo_stock_datos');
+  if (error) { toast(errMsg(error)); S.stock = { insumos: [], productos: [], movimientos: [] }; } else S.stock = data;
+}
+
+function vStock(modo, recargar) {
+  const st = S.stock || { insumos: [], productos: [], movimientos: [] };
+  const mov = st.movimientos.filter(m => (modo === 'insumos') === (m.clase === 'insumo')).slice(0, 25);
+  const listaMov = mov.length ? `<div class="section-title"><h3>Últimos movimientos</h3></div><div class="card"><table class="items"><tbody>
+    ${mov.map(m => `<tr><td><b>${esc(m.nombre)}</b>${m.variante ? ` · ${esc(m.variante)}` : ''}<div class="muted small">${MOV[m.tipo]}${m.pedido ? ` · pedido #${m.pedido}` : ''}${m.nota ? ' · ' + esc(m.nota) : ''} · ${fechaHora(m.creado_en)}</div></td>
+      <td class="r num" style="color:${Number(m.cantidad) < 0 ? 'var(--bad)' : 'var(--good)'}">${Number(m.cantidad) > 0 ? '+' : ''}${fmtN(m.cantidad)}</td>
+      <td class="r num muted">= ${fmtN(m.stock_final)}</td></tr>`).join('')}</tbody></table></div>` : '';
+  if (modo === 'terminados') {
+    const grupos = Object.keys(CATALOGO).map(t => {
+      const ps = st.productos.filter(p => p.tipo === t);
+      return ps.length ? `<div class="section-title"><h2>${CATALOGO[t]}</h2></div><div class="list">${ps.map(p => `<div class="card prod">
+        <div><div class="prod-name">${esc(p.nombre)}${p.variante ? ` · ${esc(p.variante)}` : ''}</div><div class="prod-meta"><span class="code">${esc(p.codigo)}</span>${esc(p.presentacion)}</div></div>
+        <div style="text-align:right"><div class="num" style="font-size:22px;font-weight:700;${Number(p.cantidad) < 0 ? 'color:var(--bad)' : ''}">${fmtN(p.cantidad)}</div><div class="muted small">${esc(PLURAL[p.unidad] || p.unidad)}</div></div>
+        <div class="row" style="grid-column:1/-1;margin-top:8px"><button class="btn small" data-mov="produccion" data-ref="${p.producto_id}" data-var="${esc(p.variante)}">+ Produje</button>
+          <button class="btn sec small" data-mov="ajuste" data-ref="${p.producto_id}" data-var="${esc(p.variante)}">Contar / ajustar</button></div></div>`).join('')}</div>` : '';
+    }).join('');
+    $('#main').innerHTML = `<div class="msg info section">Cuando un pedido se marca <b>Enviado</b>, se descuenta solo de este stock. Si se cancela, vuelve.</div>${grupos}${listaMov}`;
+  } else {
+    const bajos = st.insumos.filter(i => Number(i.minimo) > 0 && Number(i.stock) < Number(i.minimo));
+    $('#main').innerHTML = `<div class="section-title"><h2>Materia prima</h2><button class="btn small" id="nuevo-ins">+ Insumo</button></div>
+      ${bajos.length ? `<div class="msg bad">Por debajo del mínimo: <b>${bajos.map(i => esc(i.nombre)).join(', ')}</b></div>` : ''}
+      <div class="list">${st.insumos.map(i => { const bajo = Number(i.minimo) > 0 && Number(i.stock) < Number(i.minimo); return `<div class="card prod" style="${bajo ? 'border-color:var(--bad)' : ''}">
+        <div><div class="prod-name">${esc(i.nombre)}</div><div class="prod-meta">${Number(i.minimo) > 0 ? `Mínimo: ${fmtN(i.minimo)} ${esc(i.unidad)}` : 'Sin mínimo'} · <button class="link small" data-edins="${i.id}">Editar</button></div></div>
+        <div style="text-align:right"><div class="num" style="font-size:22px;font-weight:700;${bajo ? 'color:var(--bad)' : ''}">${fmtN(i.stock)}</div><div class="muted small">${esc(i.unidad)}</div></div>
+        <div class="row" style="grid-column:1/-1;margin-top:8px"><button class="btn small" data-mov="ingreso" data-ref="${i.id}">+ Ingreso</button>
+          <button class="btn sec small" data-mov="uso" data-ref="${i.id}">− Uso</button>
+          <button class="btn sec small" data-mov="ajuste" data-ref="${i.id}">Contar / ajustar</button></div></div>`; }).join('')}</div>${listaMov}`;
+    $('#nuevo-ins').onclick = () => editarInsumo(null, recargar);
+    $$('[data-edins]').forEach(b => b.onclick = () => editarInsumo(st.insumos.find(i => i.id === b.dataset.edins), recargar));
+  }
+  $$('[data-mov]').forEach(b => b.onclick = () => moverStock(modo === 'insumos' ? 'insumo' : 'producto', b.dataset.ref, b.dataset.var || '', b.dataset.mov, recargar));
+}
+
+function moverStock(clase, ref, variante, tipo, recargar) {
+  const st = S.stock;
+  const it = clase === 'insumo' ? st.insumos.find(i => i.id === ref) : st.productos.find(p => p.producto_id === ref && p.variante === variante);
+  const nombre = clase === 'insumo' ? it.nombre : it.nombre + (variante ? ' · ' + variante : '');
+  const u = clase === 'insumo' ? it.unidad : (PLURAL[it.unidad] || it.unidad);
+  const actual = clase === 'insumo' ? it.stock : it.cantidad;
+  const titulo = { ingreso: 'Ingreso de mercadería', uso: 'Uso en producción', produccion: 'Producción terminada', ajuste: 'Conteo de stock' }[tipo];
+  const label = { ingreso: `¿Cuánto entró? (${u})`, uso: `¿Cuánto se usó? (${u})`, produccion: `¿Cuántas ${u} produjiste?`, ajuste: `¿Cuánto hay ahora? (${u})` }[tipo];
+  sheet(`${sheetHead(titulo, `${esc(nombre)} · stock actual ${fmtN(actual)} ${esc(u)}`)}
+    <form id="fm"><div class="field"><label for="mq">${label}</label><input class="in num" id="mq" inputmode="decimal" style="font-size:24px" autofocus></div>
+    <div class="field"><label for="mn">Nota <span class="muted">(opcional)</span></label><input class="in" id="mn" maxlength="200" placeholder="${tipo === 'ingreso' ? 'Proveedor, remito…' : ''}"></div>
+    <button class="btn block" id="mg">Guardar</button></form>`);
+  setTimeout(() => $('#mq')?.focus(), 50);
+  $('#fm').onsubmit = async e => {
+    e.preventDefault();
+    const q = Number(String($('#mq').value).replace(',', '.'));
+    if (!(q >= 0) || $('#mq').value === '') return toast('Poné una cantidad');
+    $('#mg').disabled = true;
+    const { error } = await sb.rpc('apo_stock_mover', { p_clase: clase, p_ref: ref, p_variante: variante, p_tipo: tipo, p_cantidad: q, p_nota: $('#mn').value });
+    if (error) { toast(errMsg(error)); $('#mg').disabled = false; return; }
+    cerrar(); toast('Stock actualizado'); recargar();
+  };
+}
+
+function editarInsumo(i, recargar) {
+  sheet(`${sheetHead(i ? 'Editar insumo' : 'Nuevo insumo')}
+    <form id="fi"><div class="field"><label for="in1">Nombre</label><input class="in" id="in1" value="${esc(i?.nombre || '')}"></div>
+    <div class="grid2"><div class="field"><label for="in2">Unidad</label><select class="in" id="in2">${['kg', 'g', 'litros', 'unidades', 'cajones', 'bolsas'].map(u => `<option ${u === (i?.unidad || 'kg') ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
+    <div class="field"><label for="in3">Stock mínimo <span class="muted">(avisa debajo)</span></label><input class="in" id="in3" inputmode="decimal" value="${i ? Number(i.minimo) || '' : ''}"></div></div>
+    ${i ? '<label class="switch" style="margin-bottom:16px"><input type="checkbox" id="in4"> Ya no lo usamos (ocultar)</label>' : ''}
+    <button class="btn block" id="ig">Guardar</button></form>`);
+  $('#fi').onsubmit = async e => {
+    e.preventDefault(); $('#ig').disabled = true;
+    const { error } = await sb.rpc('apo_insumo_guardar', { p_id: i?.id || null, p_nombre: $('#in1').value, p_unidad: $('#in2').value,
+      p_minimo: Number(String($('#in3').value || '0').replace(',', '.')), p_activo: i ? !$('#in4').checked : true });
+    if (error) { toast(errMsg(error)); $('#ig').disabled = false; return; }
+    cerrar(); toast('Insumo guardado'); recargar();
+  };
+}
+
+// =====================================================================
 // Jefe de producción: qué producir y qué despachar. Sin precios ni datos comerciales.
 // =====================================================================
 const SIGUIENTE = { recibido: ['en_preparacion', 'Empezar a preparar'], en_preparacion: ['enviado', 'Marcar enviado'], enviado: ['entregado', 'Marcar entregado'] };
@@ -804,12 +902,14 @@ const SIGUIENTE = { recibido: ['en_preparacion', 'Empezar a preparar'], en_prepa
 async function cargarProd() {
   const { data, error } = await sb.rpc('apo_prod_pedidos');
   if (error) { toast(errMsg(error)); S.pedidos = []; } else S.pedidos = data || [];
+  await cargarStock();
   vProd();
 }
 
 function vProd() {
   const pend = S.pedidos.filter(p => p.estado === 'recibido').length;
-  const tabs = [['producir', 'A producir', 0], ['preparar', 'Pedidos', pend]];
+  const bajos = (S.stock?.insumos || []).filter(i => Number(i.minimo) > 0 && Number(i.stock) < Number(i.minimo)).length;
+  const tabs = [['producir', 'A producir', 0], ['preparar', 'Pedidos', pend], ['terminados', 'Stock terminados', 0], ['insumos', 'Materia prima', bajos]];
   app(`${encabezado('Producción')}
     <nav class="tabs pad" role="tablist">${tabs.map(([k, t, n]) => `<button class="tab" role="tab" data-t="${k}" aria-selected="${S.tab === k}">${t}${n ? `<span class="pill">${n}</span>` : ''}</button>`).join('')}
       <button class="tab" id="rf" style="margin-left:auto">${svg('reload')} Actualizar</button></nav>
@@ -817,7 +917,7 @@ function vProd() {
   conectarSalir();
   $$('[data-t]').forEach(b => b.onclick = () => { S.tab = b.dataset.t; vProd(); });
   $('#rf').onclick = cargarProd;
-  (S.tab === 'producir' ? pProducir : pPedidos)();
+  ({ producir: pProducir, preparar: pPedidos, terminados: () => vStock('terminados', cargarProd), insumos: () => vStock('insumos', cargarProd) })[S.tab]();
 }
 
 function pProducir() {
@@ -829,11 +929,15 @@ function pProducir() {
     g[k].cantidad += i.cantidad; g[k].pedidos.add(p.numero);
   }
   const filas = Object.values(g).sort((a, b) => a.codigo.localeCompare(b.codigo) || a.variante.localeCompare(b.variante));
+  const enStock = f => Number((S.stock?.productos || []).find(s => s.codigo === f.codigo && s.variante === f.variante)?.cantidad || 0);
   const bloque = t => {
     const fs = filas.filter(f => f.tipo === t);
-    return fs.length ? `<div class="card section"><h3 style="margin-bottom:12px">${CATALOGO[t]}</h3><div class="produce" style="font-size:16px;gap:10px 12px">
-      ${fs.map(f => `<span><b style="font-family:inherit">${esc(f.nombre)}</b>${f.variante ? ` · ${esc(f.variante)}` : ''}<br><span class="muted small">${esc(f.presentacion)} · pedidos ${[...f.pedidos].map(n => '#' + n).join(', ')}</span></span>
-        <b style="font-size:18px">${unidades(f.cantidad, f.unidad)}</b>`).join('')}</div></div>` : '';
+    return fs.length ? `<div class="card section"><h3 style="margin-bottom:12px">${CATALOGO[t]}</h3>
+      <table class="items"><thead><tr><th>Producto</th><th class="r">Pedido</th><th class="r">Stock</th><th class="r">Falta</th></tr></thead><tbody>
+      ${fs.map(f => { const st = enStock(f), falta = Math.max(0, f.cantidad - st); return `<tr><td><b>${esc(f.nombre)}</b>${f.variante ? ` · ${esc(f.variante)}` : ''}<br><span class="muted small">pedidos ${[...f.pedidos].map(n => '#' + n).join(', ')}</span></td>
+        <td class="r num">${fmtN(f.cantidad)}</td><td class="r num">${fmtN(st)}</td>
+        <td class="r num"><b style="${falta ? 'color:var(--bad)' : 'color:var(--good)'}">${falta ? unidades(falta, f.unidad) : '✓'}</b></td></tr>`; }).join('')}
+      </tbody></table></div>` : '';
   };
   $('#main').innerHTML = `<div class="section-title"><h2>A producir</h2><span class="muted small">${activos.length} pedido${activos.length === 1 ? '' : 's'} sin despachar</span></div>
     ${filas.length ? Object.keys(CATALOGO).map(bloque).join('') : '<div class="empty">No hay nada pendiente de producir.</div>'}`;
